@@ -16,6 +16,7 @@ default = ["connect"]
 connect = ["stream", "tokio/net"]
 tls = ["native-tls", "tokio-tls", "stream", "tungstenite/tls"]
 stream = []
+deflate = ["tungstenite/deflate"]
 
 [dependencies]
 log = "0.4"
@@ -24,7 +25,9 @@ pin-project = "0.4"
 tokio = { version = "0.2", default-features = false, features = ["io-util"] }
 
 [dependencies.tungstenite]
-version = "0.10.0"
+git = "https://github.com/swimos/tungstenite-rs"
+branch = "deflate"
+version = "0.11.1"
 default-features = false
 
 [dependencies.native-tls]
