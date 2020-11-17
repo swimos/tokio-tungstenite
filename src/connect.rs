@@ -4,14 +4,15 @@ use tokio::net::TcpStream;
 
 use tungstenite::client::uri_mode;
 use tungstenite::handshake::client::Response;
+use tungstenite::protocol::WebSocketConfig;
 use tungstenite::Error;
 
-use super::{client_async, Request, IntoClientRequest, WebSocketStream};
+use super::{client_async_with_config, IntoClientRequest, Request, WebSocketStream};
 
 #[cfg(feature = "tls")]
 pub(crate) mod encryption {
-    use native_tls::TlsConnector;
-    use tokio_tls::{TlsConnector as TokioTlsConnector, TlsStream};
+    use native_tls::TlsConnector as NativeTlsConnector;
+    use tokio_native_tls::{TlsConnector as TokioTlsConnector, TlsStream};
 
     use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -25,10 +26,14 @@ pub(crate) mod encryption {
 
     pub type AutoStream<S> = MaybeTlsStream<S>;
 
+    /// A TLS connector that can be used when establishing TLS connections.
+    pub type TlsConnector = NativeTlsConnector;
+
     pub async fn wrap_stream<S>(
         socket: S,
         domain: String,
         mode: Mode,
+        tls_connector: Option<TlsConnector>,
     ) -> Result<AutoStream<S>, Error>
     where
         S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
@@ -36,7 +41,7 @@ pub(crate) mod encryption {
         match mode {
             Mode::Plain => Ok(StreamSwitcher::Plain(socket)),
             Mode::Tls => {
-                let try_connector = TlsConnector::new();
+                let try_connector = tls_connector.map_or_else(|| TlsConnector::new(), |c| Ok(c));
                 let connector = try_connector.map_err(Error::Tls)?;
                 let stream = TokioTlsConnector::from(connector);
                 let connected = stream.connect(&domain, socket).await;
@@ -52,6 +57,8 @@ pub(crate) mod encryption {
 #[cfg(feature = "tls")]
 pub use self::encryption::MaybeTlsStream;
 
+pub use self::encryption::TlsConnector;
+
 #[cfg(not(feature = "tls"))]
 pub(crate) mod encryption {
     use tokio::io::{AsyncRead, AsyncWrite};
@@ -61,10 +68,14 @@ pub(crate) mod encryption {
 
     pub type AutoStream<S> = S;
 
+    /// A TLS connector that can be used when establishing TLS connections.
+    pub type TlsConnector = ();
+
     pub async fn wrap_stream<S>(
         socket: S,
         _domain: String,
         mode: Mode,
+        _tls_connector: Option<TlsConnector>,
     ) -> Result<AutoStream<S>, Error>
     where
         S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
@@ -98,6 +109,25 @@ where
     S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
     AutoStream<S>: Unpin,
 {
+    client_async_tls_with_config(request, stream, None, None).await
+}
+
+/// The same as `client_async_tls()` but the one can specify a websocket configuration,
+/// and an optional TLS connector. If no connector is specified, the default one will
+/// be created.
+///
+/// Please refer to `client_async_tls()` for more details.
+pub async fn client_async_tls_with_config<R, S>(
+    request: R,
+    stream: S,
+    config: Option<WebSocketConfig>,
+    tls_connector: Option<TlsConnector>,
+) -> Result<(WebSocketStream<AutoStream<S>>, Response), Error>
+where
+    R: IntoClientRequest + Unpin,
+    S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
+    AutoStream<S>: Unpin,
+{
     let request = request.into_client_request()?;
 
     let domain = domain(&request)?;
@@ -105,13 +135,25 @@ where
     // Make sure we check domain and mode first. URL must be valid.
     let mode = uri_mode(&request.uri())?;
 
-    let stream = wrap_stream(stream, domain, mode).await?;
-    client_async(request, stream).await
+    let stream = wrap_stream(stream, domain, mode, tls_connector).await?;
+    client_async_with_config(request, stream, config).await
 }
 
 /// Connect to a given URL.
 pub async fn connect_async<R>(
     request: R,
+) -> Result<(WebSocketStream<AutoStream<TcpStream>>, Response), Error>
+where
+    R: IntoClientRequest + Unpin,
+{
+    connect_async_with_config(request, None).await
+}
+
+/// The same as `connect_async()` but the one can specify a websocket configuration.
+/// Please refer to `connect_async()` for more details.
+pub async fn connect_async_with_config<R>(
+    request: R,
+    config: Option<WebSocketConfig>,
 ) -> Result<(WebSocketStream<AutoStream<TcpStream>>, Response), Error>
 where
     R: IntoClientRequest + Unpin,
@@ -122,17 +164,15 @@ where
     let port = request
         .uri()
         .port_u16()
-        .or_else(|| {
-            match request.uri().scheme_str() {
-                Some("wss") => Some(443),
-                Some("ws") => Some(80),
-                _ => None
-            }
+        .or_else(|| match request.uri().scheme_str() {
+            Some("wss") => Some(443),
+            Some("ws") => Some(80),
+            _ => None,
         })
-        .ok_or(Error::Url("Url scheme not supported".into()))?;
+        .ok_or_else(|| Error::Url("Url scheme not supported".into()))?;
 
     let addr = format!("{}:{}", domain, port);
     let try_socket = TcpStream::connect(addr).await;
     let socket = try_socket.map_err(Error::Io)?;
-    client_async_tls(request, socket).await
+    client_async_tls_with_config(request, socket, config, None).await
 }

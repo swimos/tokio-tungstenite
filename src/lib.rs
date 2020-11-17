@@ -28,29 +28,38 @@ pub mod stream;
 use std::io::{Read, Write};
 
 use compat::{cvt, AllowStd, ContextWaker};
-use futures::{Sink, SinkExt, Stream};
+use futures_util::{
+    sink::{Sink, SinkExt},
+    stream::Stream,
+};
 use log::*;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use tungstenite::{
-    error::Error as WsError,
     client::IntoClientRequest,
+    error::Error as WsError,
     handshake::{
         client::{ClientHandshake, Request, Response},
         server::{Callback, NoCallback},
+        HandshakeError,
     },
     protocol::{Message, Role, WebSocket, WebSocketConfig},
     server,
 };
 
 #[cfg(feature = "connect")]
-pub use connect::{client_async_tls, connect_async};
+pub use connect::{
+    client_async_tls,
+    client_async_tls_with_config,
+    connect_async,
+    connect_async_with_config,
+    TlsConnector,
+};
 
 #[cfg(all(feature = "connect", feature = "tls"))]
 pub use connect::MaybeTlsStream;
-use std::error::Error;
 use tungstenite::protocol::CloseFrame;
 
 /// Creates a WebSocket handshake from a request and a stream.
@@ -92,11 +101,12 @@ where
         let cli_handshake = ClientHandshake::start(allow_std, request, config)?;
         cli_handshake.handshake()
     });
-    f.await.map_err(|e| {
-        WsError::Io(std::io::Error::new(
+    f.await.map_err(|e| match e {
+        HandshakeError::Failure(e) => e,
+        e => WsError::Io(std::io::Error::new(
             std::io::ErrorKind::Other,
-            e.description(),
-        ))
+            e.to_string(),
+        )),
     })
 }
 
@@ -157,11 +167,12 @@ where
     let f = handshake::server_handshake(stream, move |allow_std| {
         server::accept_hdr_with_config(allow_std, callback, config)
     });
-    f.await.map_err(|e| {
-        WsError::Io(std::io::Error::new(
+    f.await.map_err(|e| match e {
+        HandshakeError::Failure(e) => e,
+        e => WsError::Io(std::io::Error::new(
             std::io::ErrorKind::Other,
-            e.description(),
-        ))
+            e.to_string(),
+        )),
     })
 }
 
@@ -174,6 +185,7 @@ where
 /// through the respective `Stream` and `Sink`. Check more information about
 /// them in `futures-rs` crate documentation or have a look on the examples
 /// and unit tests for this crate.
+#[derive(Debug)]
 pub struct WebSocketStream<S> {
     inner: WebSocket<AllowStd<S>>,
 }
@@ -241,6 +253,12 @@ impl<S> WebSocketStream<S> {
         self.inner.get_mut().get_mut()
     }
 
+    /// Returns a reference to the configuration of the tungstenite stream.
+    pub fn get_config(&self) -> &WebSocketConfig
+    {
+        self.inner.get_config()
+    }
+
     /// Close the underlying web socket
     pub async fn close(&mut self, msg: Option<CloseFrame<'_>>) -> Result<(), WsError>
     where
@@ -259,7 +277,7 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         trace!("{}:{} Stream.poll_next", file!(), line!());
-        match futures::ready!(self.with_context(Some((ContextWaker::Read, cx)), |s| {
+        match futures_util::ready!(self.with_context(Some((ContextWaker::Read, cx)), |s| {
             trace!(
                 "{}:{} Stream.with_context poll_next -> read_message()",
                 file!(),

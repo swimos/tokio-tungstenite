@@ -1,4 +1,4 @@
-use futures::{SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt};
 use log::*;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
@@ -34,7 +34,7 @@ async fn main() {
     env_logger::init();
 
     let addr = "127.0.0.1:9002";
-    let mut listener = TcpListener::bind(&addr).await.expect("Can't listen");
+    let listener = TcpListener::bind(&addr).await.expect("Can't listen");
     info!("Listening on: {}", addr);
 
     while let Ok((stream, _)) = listener.accept().await {

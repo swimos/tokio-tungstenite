@@ -6,23 +6,23 @@ keywords = ["websocket", "io", "web"]
 authors = ["Daniel Abramov <dabramov@snapview.de>", "Alexey Galakhov <agalakhov@snapview.de>"]
 license = "MIT"
 homepage = "https://github.com/snapview/tokio-tungstenite"
-documentation = "https://docs.rs/tokio-tungstenite/0.10.1"
+documentation = "https://docs.rs/tokio-tungstenite/0.11.0"
 repository = "https://github.com/snapview/tokio-tungstenite"
-version = "0.10.1"
+version = "0.12.0"
 edition = "2018"
 
 [features]
 default = ["connect"]
 connect = ["stream", "tokio/net"]
-tls = ["native-tls", "tokio-tls", "stream", "tungstenite/tls"]
+tls = ["native-tls", "tokio-native-tls", "stream", "tungstenite/tls"]
 stream = []
 deflate = ["tungstenite/deflate"]
 
 [dependencies]
 log = "0.4"
-futures = "0.3"
-pin-project = "0.4"
-tokio = { version = "0.2", default-features = false, features = ["io-util"] }
+futures-util = { version = "0.3", default-features = false, features = ["async-await", "sink", "std"] }
+pin-project = "1.0"
+tokio = { version = "0.3", default-features = false, features = ["io-util"] }
 
 [dependencies.tungstenite]
 git = "https://github.com/swimos/tungstenite-rs"
@@ -34,11 +34,12 @@ default-features = false
 optional = true
 version = "0.2.0"
 
-[dependencies.tokio-tls]
+[dependencies.tokio-native-tls]
 optional = true
-version = "0.3"
+version = "0.2"
 
 [dev-dependencies]
-tokio = { version = "0.2", default-features = false, features = ["io-std", "macros"] }
+futures-channel = "0.3"
+tokio = { version = "0.3", default-features = false, features = ["io-std", "macros", "rt-multi-thread", "stream", "time"] }
 url = "2.0.0"
 env_logger = "0.7"
