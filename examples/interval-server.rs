@@ -1,8 +1,6 @@
-use futures_util::future::{select, Either};
 use futures_util::{SinkExt, StreamExt};
 use log::*;
-use std::net::SocketAddr;
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::{accept_async, tungstenite::Error};
 use tungstenite::{Message, Result};
@@ -24,29 +22,23 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
 
     // Echo incoming WebSocket messages and send a message periodically every second.
 
-    let mut msg_fut = ws_receiver.next();
-    let mut tick_fut = interval.next();
     loop {
-        match select(msg_fut, tick_fut).await {
-            Either::Left((msg, tick_fut_continue)) => {
+        tokio::select! {
+            msg = ws_receiver.next() => {
                 match msg {
                     Some(msg) => {
                         let msg = msg?;
-                        if msg.is_text() || msg.is_binary() {
+                        if msg.is_text() ||msg.is_binary() {
                             ws_sender.send(msg).await?;
                         } else if msg.is_close() {
                             break;
                         }
-                        tick_fut = tick_fut_continue; // Continue waiting for tick.
-                        msg_fut = ws_receiver.next(); // Receive next WebSocket message.
                     }
-                    None => break, // WebSocket stream terminated.
-                };
+                    None => break,
+                }
             }
-            Either::Right((_, msg_fut_continue)) => {
+            _ = interval.tick() => {
                 ws_sender.send(Message::Text("tick".to_owned())).await?;
-                msg_fut = msg_fut_continue; // Continue receiving the WebSocket message.
-                tick_fut = interval.next(); // Wait for next tick.
             }
         }
     }
@@ -63,9 +55,7 @@ async fn main() {
     info!("Listening on: {}", addr);
 
     while let Ok((stream, _)) = listener.accept().await {
-        let peer = stream
-            .peer_addr()
-            .expect("connected streams should have a peer address");
+        let peer = stream.peer_addr().expect("connected streams should have a peer address");
         info!("Peer address: {}", peer);
 
         tokio::spawn(accept_connection(peer, stream));

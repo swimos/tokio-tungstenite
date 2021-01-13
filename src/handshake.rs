@@ -1,16 +1,23 @@
-use crate::compat::{AllowStd, SetWaker};
-use crate::WebSocketStream;
+use crate::{
+    compat::{AllowStd, SetWaker},
+    WebSocketStream,
+};
 use log::*;
 use pin_project::pin_project;
-use std::future::Future;
-use std::io::{Read, Write};
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::{
+    future::Future,
+    io::{Read, Write},
+    pin::Pin,
+    task::{Context, Poll},
+};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tungstenite::handshake::client::Response;
-use tungstenite::handshake::server::Callback;
-use tungstenite::handshake::{HandshakeError as Error, HandshakeRole, MidHandshake as WsHandshake};
-use tungstenite::{ClientHandshake, ServerHandshake, WebSocket};
+use tungstenite::{
+    handshake::{
+        client::Response, server::Callback, HandshakeError as Error, HandshakeRole,
+        MidHandshake as WsHandshake,
+    },
+    ClientHandshake, ServerHandshake, WebSocket,
+};
 
 pub(crate) async fn without_handshake<F, S>(stream: S, f: F) -> WebSocketStream<S>
 where
@@ -39,11 +46,7 @@ where
     type Output = WebSocket<AllowStd<S>>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
-        let inner = self
-            .get_mut()
-            .0
-            .take()
-            .expect("future polled after completion");
+        let inner = self.get_mut().0.take().expect("future polled after completion");
         trace!("Setting context when skipping handshake");
         let stream = AllowStd::new(inner.stream, ctx.waker());
 
@@ -89,11 +92,11 @@ pub(crate) async fn client_handshake<F, S>(
 ) -> Result<(WebSocketStream<S>, Response), Error<ClientHandshake<AllowStd<S>>>>
 where
     F: FnOnce(
-            AllowStd<S>,
-        ) -> Result<
-            <ClientHandshake<AllowStd<S>> as HandshakeRole>::FinalResult,
-            Error<ClientHandshake<AllowStd<S>>>,
-        > + Unpin,
+        AllowStd<S>,
+    ) -> Result<
+        <ClientHandshake<AllowStd<S>> as HandshakeRole>::FinalResult,
+        Error<ClientHandshake<AllowStd<S>>>,
+    > + Unpin,
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let result = handshake(stream, f).await?;
@@ -108,11 +111,11 @@ pub(crate) async fn server_handshake<C, F, S>(
 where
     C: Callback + Unpin,
     F: FnOnce(
-            AllowStd<S>,
-        ) -> Result<
-            <ServerHandshake<AllowStd<S>, C> as HandshakeRole>::FinalResult,
-            Error<ServerHandshake<AllowStd<S>, C>>,
-        > + Unpin,
+        AllowStd<S>,
+    ) -> Result<
+        <ServerHandshake<AllowStd<S>, C> as HandshakeRole>::FinalResult,
+        Error<ServerHandshake<AllowStd<S>, C>>,
+    > + Unpin,
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let s: WebSocket<AllowStd<S>> = handshake(stream, f).await?;
