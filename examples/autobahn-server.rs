@@ -2,8 +2,12 @@ use futures_util::{SinkExt, StreamExt};
 use log::*;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
-use tokio_tungstenite::{accept_async, tungstenite::Error};
-use tungstenite::Result;
+use tokio_tungstenite::{accept_async_with_config, tungstenite::Error};
+use tungstenite::{
+    extensions::compression::{deflate::DeflateConfig, WsCompression},
+    protocol::WebSocketConfig,
+    Result,
+};
 
 async fn accept_connection(peer: SocketAddr, stream: TcpStream) {
     if let Err(e) = handle_connection(peer, stream).await {
@@ -15,7 +19,15 @@ async fn accept_connection(peer: SocketAddr, stream: TcpStream) {
 }
 
 async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
-    let mut ws_stream = accept_async(stream).await.expect("Failed to accept");
+    let mut ws_stream = accept_async_with_config(
+        stream,
+        Some(WebSocketConfig {
+            compression: WsCompression::Deflate(DeflateConfig::default()),
+            ..Default::default()
+        }),
+    )
+    .await
+    .expect("Failed to accept");
 
     info!("New WebSocket connection: {}", peer);
 
