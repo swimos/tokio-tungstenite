@@ -6,6 +6,7 @@ use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::{accept_async, tungstenite::Error};
 use tungstenite::{Message, Result};
+use tokio_stream::wrappers::IntervalStream;
 
 async fn accept_connection(peer: SocketAddr, stream: TcpStream) {
     if let Err(e) = handle_connection(peer, stream).await {
@@ -20,7 +21,7 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
     let ws_stream = accept_async(stream).await.expect("Failed to accept");
     info!("New WebSocket connection: {}", peer);
     let (mut ws_sender, mut ws_receiver) = ws_stream.split();
-    let mut interval = tokio::time::interval(Duration::from_millis(1000));
+    let mut interval = IntervalStream::new(tokio::time::interval(Duration::from_millis(1000)));
 
     // Echo incoming WebSocket messages and send a message periodically every second.
 
